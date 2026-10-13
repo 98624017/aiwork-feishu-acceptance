@@ -9,6 +9,12 @@ const { spawn, spawnSync } = require('node:child_process')
 
 const MAGIC = Buffer.from('NAE1')
 const COMMAND_TIMEOUT_MS = 290_000
+function tarExecutable() {
+  // Git Bash's GNU tar treats drive-letter paths as remote archive names.
+  return process.platform === 'win32'
+    ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe')
+    : 'tar'
+}
 const REQUIRED_TEST_IDS = new Set([
   'window-minimize-continues',
   'window-close-continues',
@@ -154,7 +160,7 @@ function archiveReports(payloadDir, outputFile) {
       tarArguments.push('-C', payloadDir, relative)
     }
   }
-  const archived = spawnSync('tar', tarArguments, { stdio: 'ignore', timeout: 60_000 })
+  const archived = spawnSync(tarExecutable(), tarArguments, { stdio: 'ignore', timeout: 60_000 })
   if (archived.status !== 0) throw new Error('Private report archive failed')
   fs.mkdirSync(path.dirname(outputFile), { recursive: true })
   fs.writeFileSync(outputFile, encryptBytes(fs.readFileSync(archiveFile), encryptionKey()), {
@@ -253,7 +259,7 @@ async function main(args) {
   } else if (command === 'unpack') {
     if (!output) throw new Error('Missing payload destination')
     fs.mkdirSync(output, { recursive: true })
-    await runPrivateCommand('unpack', path.resolve(output), 'tar', [
+    await runPrivateCommand('unpack', path.resolve(output), tarExecutable(), [
       '-xzf',
       path.resolve(input),
       '-C',

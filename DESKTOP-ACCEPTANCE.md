@@ -51,6 +51,11 @@ the key. The runner produces only `summary.json` and `private-reports.enc` as pu
 Download and decrypt reports locally with the `decrypt` command and their encrypted SHA256.
 Remove the temporary repository secret after verification.
 
+The `windows_only` dispatch input repeats just Windows after a Windows-specific infrastructure
+fix; unchanged passing Mac evidence can be retained for the same encrypted application payload.
+Windows archive operations use the system `System32/tar.exe`, because Git Bash's GNU tar treats
+drive-letter paths as remote archive names.
+
 ## What native CI can establish
 
 The Windows x64, macOS ARM64 and macOS Intel matrix runs the actual Electron process with an
