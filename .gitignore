@@ -1,3 +1,6 @@
 node_modules/
 reports/
 .env*
+payload/**
+!payload/desktop-acceptance.enc
+acceptance-private-artifacts/

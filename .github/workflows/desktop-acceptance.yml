@@ -1,0 +1,88 @@
+name: Encrypted native desktop acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      payload_file:
+        description: Repository-relative encrypted archive
+        required: true
+        default: payload/desktop-acceptance.enc
+        type: string
+      payload_sha256:
+        description: SHA256 of encrypted archive
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      PAYLOAD_DIR: ${{ runner.temp }}/native-acceptance/payload
+      PUBLIC_REPORT_DIR: ${{ runner.temp }}/native-acceptance/public-reports
+      CI: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check public harness
+        run: |
+          node native-acceptance.cjs self-test
+          node native-acceptance.test.cjs
+        timeout-minutes: 1
+      - name: Authenticate and decrypt private payload
+        shell: bash
+        env:
+          NATIVE_ACCEPTANCE_KEY: ${{ secrets.NATIVE_ACCEPTANCE_KEY }}
+          PAYLOAD_FILE: ${{ inputs.payload_file }}
+          PAYLOAD_SHA256: ${{ inputs.payload_sha256 }}
+        run: |
+          case "$PAYLOAD_FILE" in payload/*.enc) ;; *) exit 1 ;; esac
+          node native-acceptance.cjs decrypt "$PAYLOAD_FILE" "$RUNNER_TEMP/native-acceptance/payload.tar.gz" "$PAYLOAD_SHA256"
+          node native-acceptance.cjs unpack "$RUNNER_TEMP/native-acceptance/payload.tar.gz" "$PAYLOAD_DIR"
+        timeout-minutes: 2
+      - name: Inventory native input and boot capabilities
+        run: node native-acceptance.cjs inventory before
+        timeout-minutes: 2
+      - name: Install locked private dependencies
+        shell: bash
+        run: node native-acceptance.cjs install "$PAYLOAD_DIR"
+        timeout-minutes: 5
+      - name: Prepare native private application
+        shell: bash
+        run: node native-acceptance.cjs prepare "$PAYLOAD_DIR"
+        timeout-minutes: 5
+      - name: Run native private Playwright acceptance
+        shell: bash
+        run: node native-acceptance.cjs test "$PAYLOAD_DIR"
+        timeout-minutes: 5
+      - name: Inventory unchanged OS boot after application restarts
+        if: always()
+        run: node native-acceptance.cjs inventory after
+        timeout-minutes: 3
+      - name: Encrypt all private evidence
+        if: always()
+        shell: bash
+        env:
+          NATIVE_ACCEPTANCE_KEY: ${{ secrets.NATIVE_ACCEPTANCE_KEY }}
+        run: node native-acceptance.cjs seal-reports "$PAYLOAD_DIR" "$PUBLIC_REPORT_DIR/private-reports.enc"
+        timeout-minutes: 2
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-acceptance-${{ matrix.os }}-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/native-acceptance/public-reports/summary.json
+            ${{ runner.temp }}/native-acceptance/public-reports/private-reports.enc
+          if-no-files-found: error
+          retention-days: 3
